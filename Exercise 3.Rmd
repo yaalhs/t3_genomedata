@@ -1,0 +1,111 @@
+---
+title: "exercise 3"
+author: "Yaal Shapira"
+date: "12/11/2021"
+output: html_document
+---
+
+```{r setup 1, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library("compGenomRData")
+library(DESeq2)
+library(ggplot2)
+library(edgeR)
+library(compcodeR)
+library(rpanel)
+
+```
+
+#### Set up
+```{r 1}
+counts_file <- system.file("extdata/rna-seq/SRP029880.raw_counts.tsv",
+                           package = "compGenomRData")
+coldata_file <- system.file("extdata/rna-seq/SRP029880.colData.tsv",
+                            package = "compGenomRData")
+
+counts <- read.table(counts_file, header = T, sep = '\t')
+countData <- as.matrix(subset(counts, select = c(-width)))
+colData <- read.table(coldata_file, header = T, sep = '\t',
+                      stringsAsFactors = TRUE) 
+
+dds <- DESeqDataSetFromMatrix(countData = countData,
+                              colData = colData,
+                              design = ~ group)
+
+filteration <- rowSums(DESeq2::counts(dds)) >= 10
+dds <- dds[filteration, ]
+dds <- DESeq(dds)
+DEresults = results(dds, contrast = c("group", 'CASE', 'CTRL'))
+DEresultsDf <-as.data.frame(DEresults)
+
+```
+
+#### Exercise
+```{r 2}
+plotDispEsts(dds)
+```
+
+the plot shows the relation between the estimated variance in the reading of a gene, in relation to its normalized count. This is a way to ensure the data fit to the DESeq2 model.
+
+```{r 3}
+dds_diffex = results(dds, lfcThreshold = 1)
+dds_diffex
+```
+
+lfcThreshold default value is 0, determines the minimum log fold change a gene has before counting as differential expression needed to be tested statistically.
+
+Independent filtering is a method to mitigate the effects of multiple hypothesis testingb. If we don't use this, we will have a large amount of false positives. 
+
+```{r 5}
+der = DGEList(countData, group = c(rep(1,5),rep(2,5)))
+der = estimateDisp(der)
+der = exactTest(der)
+der_diffex = topTags(der, n = 10)
+intersect(row.names(der_diffex),row.names(dds_diffex))
+```
+
+edgeR topgenes only shows a set number of the differently expressed genes, but it appears they are the same (at least up to a 1000 which is the highest number I checked).
+
+```{r 6}
+colnames(colData) = c("source_name", "condition")
+cpd = compData(count.matrix = countData, sample.annotations = colData, info.parameters = list(dataset = "compgenomeDATA", uID = "15"))
+check_compData(cpd)
+cpd_path = file.path("C:","Users","domin","Desktop","R","GenomeW3","cpd.rds")
+#save(cpd, file = cpd_path)
+# couldn't make the runDiffExp run on the data we had, generating synthetic data instead
+
+generateSyntheticData(dataset = "syn_data",n.vars = 19719, n.diffexp = 19719, samples.per.cond = 5, output.file = "C:/Users/domin/Desktop/R/GenomeW3/gsd.rds")
+
+#edgeR
+runDiffExp(data.file = "C:/Users/domin/Desktop/R/GenomeW3/gsd.rds", result.extent = "edgeR", Rmdfunction =
+          "edgeR.exact.createRmd", output.directory = "./rundiffs", norm.method = "TMM", disp.type = "tagwise",
+          trend.method = "movingave")
+#voom limma
+runDiffExp(data.file = "C:/Users/domin/Desktop/R/GenomeW3/gsd.rds", result.extent = "voom.limma",
+           Rmdfunction = "voom.limma.createRmd", 
+           output.directory = "./rundiffs", norm.method = "TMM")
+#t test
+runDiffExp(data.file = "C:/Users/domin/Desktop/R/GenomeW3/gsd.rds", result.extent = "ttest", 
+           Rmdfunction = "ttest.createRmd", 
+           output.directory = "./rundiffs", norm.method = "TMM")
+
+file.table = data.frame(input.files = c("C:/Users/domin/Desktop/R/GenomeW3/rundiffs/gsd_voom.limma.rds", 
+                                        "C:/Users/domin/Desktop/R/GenomeW3/rundiffs/gsd_edgeR.rds",
+                                        "C:/Users/domin/Desktop/R/GenomeW3/rundiffs/gsd_ttest.rds"),
+                        stringsAsFactors = F)
+parameters = list(incl.nbr.samples = NULL, incl.replicates = NULL, 
+                   incl.dataset = "syn_data", incl.de.methods = NULL, 
+                   fdr.threshold = 0.05, tpr.threshold = 0.05, 
+                   typeI.threshold = 0.05, ma.threshold = 0.05, 
+                   fdc.maxvar = 1500, overlap.threshold = 0.05, 
+                   fracsign.threshold = 0.05, 
+                   comparisons = c("fdr", "tpr", "ma", "correlation"))
+runComparison(file.table = file.table, parameters = parameters, output.directory = ".")
+
+knitr::include_graphics(c("compcodeR_figurecorrelation-1-1.png", "compcodeR_figurecorrelation-1-2.png",
+                          "compcodeR_figurefdr-1.png","compcodeR_figuretpr-1.png"))
+
+
+```
+
